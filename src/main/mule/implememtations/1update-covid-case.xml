@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	 <os:object-store name="Object_store" doc:name="Object store" doc:id="6c5ac312-b2b8-4297-b08c-5be683516d78" maxEntries="100" entryTtl="1" entryTtlUnit="HOURS"/>
+	<flow name="put:\cases:application\json:uhub-system-api-config">
+        <set-variable value='#[attributes.headers."z-correlation-id"  default""]' doc:name="Set correlationId" doc:id="2f51b7cb-42e6-4a64-8e70-098401c86b6e" variableName="correlationId"/>
+		<logger level="INFO" doc:name=" start Log " doc:id="b84618f9-e817-4aca-9acc-1356fedd529d" message='transactionID: #[vars.transactionId]], correlationID: #[vars.correlationID], message: "Started update covid case flow", payload: #[payload]'/>
+		<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:id="e6e12447-252a-4ede-b5e6-cb71f275a2ae">
+            <ee:message>
+            </ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="covidCasePayload" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	case_id: payload.caseID,
+	source: payload.source,
+	case_type: payload.caseType,
+	first_name: payload.firstName,
+	last_name: payload.lastName,
+	phone: payload.phone,
+	email: payload.email,
+	date_of_birth: payload.dateOfBirth as String {
+		format: "yyyy-MM-dd"
+	},
+	national_id: payload.nationalID,
+	national_id_type: payload.nationalIDType,
+	street_address: payload.address.streetAddress,
+	city: payload.address.city,
+	state: upper(payload.address.state),
+	postal: payload.address.postal,
+	country: payload.address.country,
+	update_date: now() as String {
+		format: "yyyy-MM-dd"
+	},
+	create_by: "UHIS",
+	update_by: "UHIS"
+}
+]]></ee:set-variable>
+			</ee:variables>
+        
+</ee:transform>
+		<idempotent-message-validator doc:name="Idempotent Message Validator" doc:id="31b69220-29e2-439c-826d-b3898f1324c5" objectStore="Object_store" idExpression='#[vars.covidCasePayload pluck $ joinBy  ""]'/>
+		<flow-ref doc:name="Flow Reference" doc:id="0d000575-ee5c-4598-acf3-204d3d97ae4a" name="update-covid-case-Sub_Flow"/>
+		<ee:transform doc:name="Transform Message" doc:id="553c410e-fdc3-4193-81fc-10024e237c4c" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+if (payload.affectedRows > 0 ) {
+	caseID: vars.covidCasePayload.case_id
+} else {}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="end Log" doc:id="8e04c446-1201-4475-b87e-b8257620049c" message='transactionID: #[vars.transactionId]], correlationID: #[vars.correlationID], message: "Completed update covid case flow", payload: #[payload]'/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="6a38685f-f865-4c71-9dd2-339ee7fb058b" >
+				<set-variable value="#[400]" doc:name="Set HTTP Status - 400" doc:id="f6869988-5471-47f0-a585-570d65d3e279" variableName="httpstatus"/>
+				<set-variable value="Bad request" doc:name="set Error Message" doc:id="d8d9f789-10f0-465e-8de4-a30830813417" variableName="errormessage"/>
+				<set-variable value='#["Duplicate request received"]' doc:name="Set Error Description" doc:id="9f9f92f1-1d68-45c7-b275-08f36e119869" variableName="errorDescription"/>
+				<flow-ref doc:name="Flow Reference" doc:id="f672f90e-eabc-459a-b1fc-c168d508f47d" name="global-prepare-error-response-sub-flow"/>
+			</on-error-continue>
+		</error-handler>
+    
+</flow>
+	
+	
+	
+	</mule>
